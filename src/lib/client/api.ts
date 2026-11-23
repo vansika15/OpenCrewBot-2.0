@@ -1,4 +1,6 @@
 import type {
+  AgentFactoryInput,
+  AgentFactoryResult,
   AppStatus,
   Bot,
   BotInput,
@@ -11,6 +13,8 @@ import type {
   ModelOption,
   Room,
   RoomInput,
+  Task,
+  TaskPlan,
 } from "@/lib/shared/types";
 
 async function call<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -65,4 +69,12 @@ export const api = {
     call<{ server: McpServer }>("/api/connections/mcp", { method: "POST", json: input }),
   removeMcpServer: (id: string) => call(`/api/connections/mcp/${id}`, { method: "DELETE" }),
   testMcpServer: (id: string) => call<{ tools: number }>(`/api/connections/mcp/${id}/test`, { method: "POST" }),
+  orchestrate: (goal: string, conversationId?: string) =>
+    call<{ plan: TaskPlan }>("/api/orchestrate", { method: "POST", json: { goal, conversationId } }),
+  listTasks: (planId?: string) => call<{ tasks: Task[]; plans?: TaskPlan[]; plan?: TaskPlan }>(`/api/tasks${planId ? `?planId=${planId}` : ""}`),
+  getTask: (id: string) => call<{ task: Task }>(`/api/tasks/${id}`),
+  approveTask: (id: string, approved: boolean, reason?: string) =>
+    call<{ task: Task }>(`/api/tasks/${id}`, { method: "PATCH", json: { approved, reason } }),
+  createAgentFromPrompt: (input: AgentFactoryInput) =>
+    call<AgentFactoryResult>("/api/agent-factory", { method: "POST", json: input }),
 };

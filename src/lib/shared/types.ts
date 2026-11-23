@@ -1,6 +1,8 @@
 // Types shared by the server and the browser. Everything here is plain JSON.
 
-export type ApprovalMode = "ask" | "full";
+export type ApprovalMode = "ask" | "controlled" | "full";
+
+export type PermissionLevel = "ask_first" | "controlled" | "full_access" | "ask" | "full";
 
 export interface BotTools {
   /** Tavily search, extract and crawl. */
@@ -140,7 +142,12 @@ export type ServerEvent =
   | { type: "memory-changed"; botId: string }
   /** A bot's Browserbase live view opened (url) or closed (null). */
   | { type: "browser-session"; botId: string; liveUrl: string | null }
-  | { type: "connections-changed" };
+  | { type: "connections-changed" }
+  | { type: "tasks-changed" }
+  | { type: "plan-updated"; plan: TaskPlan }
+  | { type: "workflow-updated"; workflowId: string }
+  | { type: "audit-logged"; entry: AuditLogEntry }
+  | { type: "project-memory-changed" };
 
 /** An app from Composio's catalog, with this install's connection state. */
 export interface ComposioApp {
@@ -171,3 +178,120 @@ export interface ConnectionOption {
   kind: "composio" | "mcp";
   logo?: string;
 }
+
+// ── OpenCrewBot 2.0 Autonomous Workforce Extensions ────────────────────
+
+export type TaskStatus =
+  | "pending"
+  | "scheduled"
+  | "running"
+  | "awaiting-approval"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type TaskPriority = "low" | "medium" | "high" | "critical";
+
+export interface Task {
+  id: string;
+  planId?: string;
+  title: string;
+  description: string;
+  assignedAgentId: string;
+  dependencies: string[];
+  priority: TaskPriority;
+  status: TaskStatus;
+  input: Record<string, unknown> | string;
+  output?: string;
+  error?: string;
+  requiresApproval: boolean;
+  approvalStatus?: "pending" | "approved" | "rejected";
+  startedAt?: string;
+  completedAt?: string;
+  createdAt: string;
+  retryCount?: number;
+  maxRetries?: number;
+  timeoutMs?: number;
+}
+
+export type TaskPlanStatus = "planning" | "executing" | "completed" | "failed" | "interrupted";
+
+export interface TaskPlan {
+  id: string;
+  goal: string;
+  conversationId?: string;
+  status: TaskPlanStatus;
+  tasks: Task[];
+  synthesizedDeliverable?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  category: "research" | "analysis" | "engineering" | "marketing" | "finance" | "communication";
+  instructions: string;
+  parametersSchema?: Record<string, unknown>;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  scheduleCron?: string;
+  intervalMinutes?: number;
+  agentId?: string;
+  roomId?: string;
+  prompt: string;
+  enabled: boolean;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  createdAt: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  status: "running" | "completed" | "failed";
+  output?: string;
+  error?: string;
+  startedAt: string;
+  completedAt?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  actor: string;
+  action: string;
+  resource: string;
+  details?: string;
+  permissionLevel: ApprovalMode;
+  approved: boolean;
+  reason?: string;
+}
+
+export interface MemoryProvenance {
+  what: string;
+  when: string;
+  why: string;
+  where: string;
+  category?: string;
+}
+
+export interface AgentFactoryInput {
+  prompt: string;
+  preferredModel?: string;
+  permissionLevel?: ApprovalMode;
+}
+
+export interface AgentFactoryResult {
+  bot: Bot;
+  suggestedSkills: string[];
+  reasoning: string;
+}
+

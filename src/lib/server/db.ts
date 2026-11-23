@@ -2,7 +2,18 @@
 // its own store (mastra.db) for each bot's model-facing thread history.
 import { createClient, type Client } from "@libsql/client";
 import { APP_DB_URL } from "./config";
-import type { Bot, ChatMessage, ConversationId, Room } from "@/lib/shared/types";
+import type {
+  AuditLogEntry,
+  Bot,
+  ChatMessage,
+  ConversationId,
+  Room,
+  Skill,
+  Task,
+  TaskPlan,
+  Workflow,
+  WorkflowRun,
+} from "@/lib/shared/types";
 
 // Cached across hot reloads, together with the file it points at, so a
 // changed database path opens a fresh connection instead of reusing one
@@ -10,7 +21,7 @@ import type { Bot, ChatMessage, ConversationId, Room } from "@/lib/shared/types"
 const g = globalThis as unknown as { __opencrewbotDb?: { url: string; schema?: number; client: Promise<Client> } };
 
 /** Bump when a table is added, so a hot-reloaded server re-runs the CREATE statements. */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 async function open(): Promise<Client> {
   const db = createClient({ url: APP_DB_URL });
@@ -30,6 +41,57 @@ async function open(): Promise<Client> {
         id TEXT PRIMARY KEY,
         generation INTEGER NOT NULL DEFAULT 0,
         last_read_at TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS task_plans (
+        id TEXT PRIMARY KEY,
+        goal TEXT NOT NULL,
+        conversation_id TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        data TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        plan_id TEXT,
+        assigned_agent_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        data TEXT NOT NULL
+      )`,
+      "CREATE INDEX IF NOT EXISTS tasks_by_plan ON tasks (plan_id)",
+      `CREATE TABLE IF NOT EXISTS workflows (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        data TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS workflow_runs (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        data TEXT NOT NULL
+      )`,
+      "CREATE INDEX IF NOT EXISTS runs_by_workflow ON workflow_runs (workflow_id, started_at DESC)",
+      `CREATE TABLE IF NOT EXISTS audit_logs (
+        id TEXT PRIMARY KEY,
+        timestamp TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        action TEXT NOT NULL,
+        resource TEXT NOT NULL,
+        approved INTEGER NOT NULL,
+        data TEXT NOT NULL
+      )`,
+      "CREATE INDEX IF NOT EXISTS audit_by_timestamp ON audit_logs (timestamp DESC)",
+      `CREATE TABLE IF NOT EXISTS skills (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        category TEXT NOT NULL,
+        enabled INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        data TEXT NOT NULL
       )`,
     ],
     "write",
@@ -194,3 +256,157 @@ export async function bumpGeneration(conversationId: ConversationId): Promise<nu
   });
   return conversationGeneration(conversationId);
 }
+
+// ── task plans & tasks ──────────────────────────────────────────────────
+
+export async function saveTaskPlan(plan: TaskPlan): Promise<void> {
+  await (await db()).execute({
+    sql: `INSERT INTO task_plans (id, goal, conversation_id, status, created_at, updated_at, data)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            status = excluded.status,
+            updated_at = excluded.updated_at,
+            data = excluded.data`,
+    args: [plan.id, plan.goal, plan.conversationId ?? null, plan.status, plan.createdAt, plan.updatedAt, JSON.stringify(plan)],
+  });
+}
+
+export async function getTaskPlan(id: string): Promise<TaskPlan | null> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM task_plans WHERE id = ?", args: [id] });
+  return rows.rows[0] ? (JSON.parse(String(rows.rows[0].data)) as TaskPlan) : null;
+}
+
+export async function listTaskPlans(): Promise<TaskPlan[]> {
+  const rows = await (await db()).execute("SELECT data FROM task_plans ORDER BY created_at DESC LIMIT 50");
+  return rows.rows.map((r) => JSON.parse(String(r.data)) as TaskPlan);
+}
+
+export async function deleteTaskPlan(id: string): Promise<void> {
+  const client = await db();
+  await client.execute({ sql: "DELETE FROM tasks WHERE plan_id = ?", args: [id] });
+  await client.execute({ sql: "DELETE FROM task_plans WHERE id = ?", args: [id] });
+}
+
+export async function saveTask(task: Task): Promise<void> {
+  await (await db()).execute({
+    sql: `INSERT INTO tasks (id, plan_id, assigned_agent_id, status, created_at, data)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            status = excluded.status,
+            data = excluded.data`,
+    args: [task.id, task.planId ?? null, task.assignedAgentId, task.status, task.createdAt, JSON.stringify(task)],
+  });
+}
+
+export async function getTask(id: string): Promise<Task | null> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM tasks WHERE id = ?", args: [id] });
+  return rows.rows[0] ? (JSON.parse(String(rows.rows[0].data)) as Task) : null;
+}
+
+export async function listTasks(limit = 100): Promise<Task[]> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM tasks ORDER BY created_at DESC LIMIT ?", args: [limit] });
+  return rows.rows.map((r) => JSON.parse(String(r.data)) as Task);
+}
+
+export async function listTasksByPlan(planId: string): Promise<Task[]> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM tasks WHERE plan_id = ? ORDER BY created_at ASC", args: [planId] });
+  return rows.rows.map((r) => JSON.parse(String(r.data)) as Task);
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  await (await db()).execute({ sql: "DELETE FROM tasks WHERE id = ?", args: [id] });
+}
+
+// ── workflows & runs ────────────────────────────────────────────────────
+
+export async function saveWorkflow(workflow: Workflow): Promise<void> {
+  await (await db()).execute({
+    sql: `INSERT INTO workflows (id, name, enabled, created_at, data)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            enabled = excluded.enabled,
+            data = excluded.data`,
+    args: [workflow.id, workflow.name, workflow.enabled ? 1 : 0, workflow.createdAt, JSON.stringify(workflow)],
+  });
+}
+
+export async function getWorkflow(id: string): Promise<Workflow | null> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM workflows WHERE id = ?", args: [id] });
+  return rows.rows[0] ? (JSON.parse(String(rows.rows[0].data)) as Workflow) : null;
+}
+
+export async function listWorkflows(): Promise<Workflow[]> {
+  const rows = await (await db()).execute("SELECT data FROM workflows ORDER BY created_at DESC");
+  return rows.rows.map((r) => JSON.parse(String(r.data)) as Workflow);
+}
+
+export async function deleteWorkflow(id: string): Promise<void> {
+  const client = await db();
+  await client.execute({ sql: "DELETE FROM workflow_runs WHERE workflow_id = ?", args: [id] });
+  await client.execute({ sql: "DELETE FROM workflows WHERE id = ?", args: [id] });
+}
+
+export async function saveWorkflowRun(run: WorkflowRun): Promise<void> {
+  await (await db()).execute({
+    sql: `INSERT INTO workflow_runs (id, workflow_id, status, started_at, data)
+          VALUES (?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            status = excluded.status,
+            data = excluded.data`,
+    args: [run.id, run.workflowId, run.status, run.startedAt, JSON.stringify(run)],
+  });
+}
+
+export async function listWorkflowRuns(workflowId?: string, limit = 50): Promise<WorkflowRun[]> {
+  const client = await db();
+  const rows = workflowId
+    ? await client.execute({ sql: "SELECT data FROM workflow_runs WHERE workflow_id = ? ORDER BY started_at DESC LIMIT ?", args: [workflowId, limit] })
+    : await client.execute({ sql: "SELECT data FROM workflow_runs ORDER BY started_at DESC LIMIT ?", args: [limit] });
+  return rows.rows.map((r) => JSON.parse(String(r.data)) as WorkflowRun);
+}
+
+// ── audit logs ──────────────────────────────────────────────────────────
+
+export async function logAudit(entry: AuditLogEntry): Promise<void> {
+  await (await db()).execute({
+    sql: `INSERT INTO audit_logs (id, timestamp, actor, action, resource, approved, data)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [entry.id, entry.timestamp, entry.actor, entry.action, entry.resource, entry.approved ? 1 : 0, JSON.stringify(entry)],
+  });
+}
+
+export async function listAuditLogs(limit = 100): Promise<AuditLogEntry[]> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM audit_logs ORDER BY timestamp DESC LIMIT ?", args: [limit] });
+  return rows.rows.map((r) => JSON.parse(String(r.data)) as AuditLogEntry);
+}
+
+// ── skills ──────────────────────────────────────────────────────────────
+
+export async function saveSkill(skill: Skill): Promise<void> {
+  await (await db()).execute({
+    sql: `INSERT INTO skills (id, name, category, enabled, created_at, data)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            category = excluded.category,
+            enabled = excluded.enabled,
+            data = excluded.data`,
+    args: [skill.id, skill.name, skill.category, skill.enabled ? 1 : 0, skill.createdAt, JSON.stringify(skill)],
+  });
+}
+
+export async function getSkill(id: string): Promise<Skill | null> {
+  const rows = await (await db()).execute({ sql: "SELECT data FROM skills WHERE id = ?", args: [id] });
+  return rows.rows[0] ? (JSON.parse(String(rows.rows[0].data)) as Skill) : null;
+}
+
+export async function listSkills(): Promise<Skill[]> {
+  const rows = await (await db()).execute("SELECT data FROM skills ORDER BY name ASC");
+  return rows.rows.map((r) => JSON.parse(String(r.data)) as Skill);
+}
+
+export async function deleteSkill(id: string): Promise<void> {
+  await (await db()).execute({ sql: "DELETE FROM skills WHERE id = ?", args: [id] });
+}
+

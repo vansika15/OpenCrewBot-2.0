@@ -12,9 +12,28 @@ import { NewBotDrawer } from "./BotForms";
 import { NewRoomDrawer } from "./RoomForms";
 import { SettingsPanel } from "./SettingsPanel";
 import { ConnectionsPanel } from "./ConnectionsPanel";
+import {
+  AgentFactoryModal,
+  TasksDashboardModal,
+  ApprovalCentreModal,
+  WorkflowsModal,
+  SkillsModal,
+  MemoryManagerModal,
+} from "./WorkforcePanels";
 
 /** Modal sheets. Editing an existing bot or room happens in the inspector instead. */
-export type Panel = { kind: "new-bot" } | { kind: "new-room" } | { kind: "settings" } | { kind: "connections" } | null;
+export type Panel =
+  | { kind: "new-bot" }
+  | { kind: "new-room" }
+  | { kind: "settings" }
+  | { kind: "connections" }
+  | { kind: "agent-factory" }
+  | { kind: "tasks" }
+  | { kind: "approvals" }
+  | { kind: "workflows" }
+  | { kind: "skills" }
+  | { kind: "memory" }
+  | null;
 
 /** Bots use details/memory/browser; rooms use members/settings. */
 export type InspectorTab = "details" | "memory" | "browser" | "members" | "settings";
@@ -226,6 +245,12 @@ export function OpenCrewBotApp() {
       {panel?.kind === "new-room" && <NewRoomDrawer onClose={() => setPanel(null)} />}
       {panel?.kind === "settings" && <SettingsPanel onClose={() => setPanel(null)} />}
       {panel?.kind === "connections" && <ConnectionsPanel onClose={() => setPanel(null)} />}
+      {panel?.kind === "agent-factory" && <AgentFactoryModal onClose={() => setPanel(null)} />}
+      {panel?.kind === "tasks" && <TasksDashboardModal onClose={() => setPanel(null)} />}
+      {panel?.kind === "approvals" && <ApprovalCentreModal onClose={() => setPanel(null)} />}
+      {panel?.kind === "workflows" && <WorkflowsModal onClose={() => setPanel(null)} />}
+      {panel?.kind === "skills" && <SkillsModal onClose={() => setPanel(null)} />}
+      {panel?.kind === "memory" && <MemoryManagerModal onClose={() => setPanel(null)} />}
       {toastText && (
         <div
           role="status"

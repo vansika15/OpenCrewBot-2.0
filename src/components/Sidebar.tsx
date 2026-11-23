@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { MoreHorizontal, PanelLeft, Pin, Plug, Plus, Search, Settings, X } from "lucide-react";
+import { BookOpen, CheckSquare, Clock, MoreHorizontal, PanelLeft, Pin, Plug, Plus, Search, Settings, ShieldAlert, Sparkles, Wrench, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/client/api";
 import { timeLabel } from "@/lib/client/format";
@@ -255,7 +255,8 @@ export function Sidebar() {
               className="top-11 right-0"
               onClose={() => setNewMenu(false)}
               items={[
-                { label: "New bot", onClick: () => setPanel({ kind: "new-bot" }), icon: <Mascot color="#3b82f6" size={18} /> },
+                { label: "Create Agent with AI", onClick: () => setPanel({ kind: "agent-factory" }), icon: <Sparkles size={18} /> },
+                { label: "New bot (manual)", onClick: () => setPanel({ kind: "new-bot" }), icon: <Mascot color="#3b82f6" size={18} /> },
                 { label: "New room", onClick: () => setPanel({ kind: "new-room" }), icon: <RoomAvatar colors={["#22c55e", "#f59e0b"]} size={18} /> },
               ]}
             />
@@ -263,9 +264,29 @@ export function Sidebar() {
         </div>
       </header>
 
-      <div className="flex flex-col items-center pt-1 pb-5">
-        <Mascot color="#f4f4f4" size={60} />
-        <span className="mt-2 text-[14px] font-medium">OpenCrewBot</span>
+      <div className="flex flex-col items-center pt-1 pb-2">
+        <Mascot color="#f4f4f4" size={52} />
+        <span className="mt-1.5 text-[14px] font-semibold text-ink">OpenCrewBot 2.0</span>
+        <span className="text-[11px] text-faint">Autonomous AI Workforce</span>
+      </div>
+
+      {/* Workforce Operating Controls */}
+      <div className="grid grid-cols-5 gap-1 px-3 pb-3">
+        <IconButton label="Task DAG Dashboard" onClick={() => setPanel({ kind: "tasks" })} className="h-9 w-9 bg-raised hover:bg-raised-2">
+          <CheckSquare size={16} className="text-ok" />
+        </IconButton>
+        <IconButton label="Approval Centre" onClick={() => setPanel({ kind: "approvals" })} className="h-9 w-9 bg-raised hover:bg-raised-2">
+          <ShieldAlert size={16} className="text-warn" />
+        </IconButton>
+        <IconButton label="Scheduled Workflows" onClick={() => setPanel({ kind: "workflows" })} className="h-9 w-9 bg-raised hover:bg-raised-2">
+          <Clock size={16} className="text-accent" />
+        </IconButton>
+        <IconButton label="Reusable Skills" onClick={() => setPanel({ kind: "skills" })} className="h-9 w-9 bg-raised hover:bg-raised-2">
+          <Wrench size={16} className="text-[#8db4ff]" />
+        </IconButton>
+        <IconButton label="Enterprise Memory" onClick={() => setPanel({ kind: "memory" })} className="h-9 w-9 bg-raised hover:bg-raised-2">
+          <BookOpen size={16} className="text-faint" />
+        </IconButton>
       </div>
 
       {searching && (

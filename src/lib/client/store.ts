@@ -168,7 +168,13 @@ function applyEvent(state: AppState, event: ServerEvent): AppState {
       return { ...state, connectionsVersion: state.connectionsVersion + 1 };
     case "bots-changed":
     case "rooms-changed":
-      // The provider refetches the bootstrap payload for these.
+    case "tasks-changed":
+    case "plan-updated":
+    case "workflow-updated":
+    case "audit-logged":
+    case "project-memory-changed":
+    default:
+      // The provider refetches or handles these.
       return state;
   }
 }

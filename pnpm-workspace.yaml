@@ -1,6 +1,7 @@
 allowBuilds:
   agent-browser: true
   edgedriver: false
+  esbuild: set this to true or false
   geckodriver: false
   sharp: false
   unrs-resolver: false
