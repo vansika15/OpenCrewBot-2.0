@@ -3,11 +3,19 @@
 // with NEBIUS_API_KEY set, the live Token Factory list decides what's available.
 import type { ModelOption } from "@/lib/shared/types";
 
-export const DEFAULT_MODEL = "MiniMaxAI/MiniMax-M3";
+export const DEFAULT_MODEL = process.env.AI_PROVIDER === "nebius" ? "MiniMaxAI/MiniMax-M3" : (process.env.OLLAMA_MODEL || "qwen2.5:0.5b");
 
 type Row = [id: string, context: number, tools: boolean, reasoning: boolean, vision: boolean, inPerM: number, outPerM: number];
 
 const STATIC: Row[] = [
+  // Local Ollama Models (Free, Local, Zero Cloud Cost)
+  ["qwen2.5:0.5b", 32768, true, true, false, 0, 0],
+  ["qwen2.5:1.5b", 32768, true, true, false, 0, 0],
+  ["llama3.2:1b", 131072, true, true, false, 0, 0],
+  ["llama3.2:3b", 131072, true, true, false, 0, 0],
+  ["phi3:mini", 128000, true, true, false, 0, 0],
+
+  // Hosted Cloud Models (Nebius Token Factory)
   ["MiniMaxAI/MiniMax-M3", 1048576, true, true, false, 0.3, 1.2],
   ["deepseek-ai/DeepSeek-V4-Flash-0731", 1024000, true, true, false, 0.14, 0.28],
   ["deepseek-ai/DeepSeek-V4.1-Flash", 1048000, true, true, true, 0.3, 1.2],
@@ -29,12 +37,27 @@ const STATIC: Row[] = [
 ];
 
 function label(id: string): string {
+  if (id.startsWith("qwen") || id.startsWith("llama") || id.startsWith("phi")) {
+    return `${id} (Local Ollama)`;
+  }
   const name = id.split("/").pop() ?? id;
   return name.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function fromRow([id, context, tools, reasoning, vision, inPerM, outPerM]: Row, live = false): ModelOption {
-  return { id, label: label(id), provider: id.split("/")[0], context, tools, reasoning, vision, inputPerM: inPerM, outputPerM: outPerM, live };
+  const isOllama = !id.includes("/") || id.startsWith("ollama");
+  return {
+    id,
+    label: label(id),
+    provider: isOllama ? "Ollama" : id.split("/")[0],
+    context,
+    tools,
+    reasoning,
+    vision,
+    inputPerM: inPerM,
+    outputPerM: outPerM,
+    live,
+  };
 }
 
 const staticOptions = STATIC.map((r) => fromRow(r));
@@ -93,13 +116,42 @@ async function fetchLive(): Promise<ModelOption[] | null> {
   }
 }
 
-/** The catalog, live from Token Factory when a key is set. `fresh` skips the 10-minute cache. */
+async function fetchOllama(): Promise<ModelOption[]> {
+  const baseUrl = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
+  try {
+    const res = await fetch(`${baseUrl}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return [];
+    const data = (await res.json()) as { models?: Array<{ name: string; size: number }> };
+    return (data.models ?? []).map((m) => ({
+      id: m.name,
+      label: `${m.name} (Local Ollama)`,
+      provider: "Ollama",
+      context: 32768,
+      tools: true,
+      reasoning: true,
+      vision: false,
+      inputPerM: 0,
+      outputPerM: 0,
+      live: true,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** The catalog, live from Token Factory when a key is set and Ollama locally. `fresh` skips the cache. */
 export async function listModels(fresh = false): Promise<ModelOption[]> {
   const cached = g.__opencrewbotModels;
   if (!fresh && cached && Date.now() - cached.at < LIVE_TTL_MS) return cached.options;
-  const live = await fetchLive();
-  const options = (live ?? staticOptions).slice().sort((a, b) => Number(b.tools) - Number(a.tools) || a.id.localeCompare(b.id));
-  if (live) g.__opencrewbotModels = { at: Date.now(), options };
+  
+  const [liveNebius, liveOllama] = await Promise.all([fetchLive(), fetchOllama()]);
+  const baseList = liveNebius ?? staticOptions;
+  
+  // Merge live Ollama models at top
+  const merged = [...liveOllama, ...baseList.filter((b) => !liveOllama.some((o) => o.id === b.id))];
+  const options = merged.slice().sort((a, b) => (a.provider === "Ollama" ? -1 : 1) || Number(b.tools) - Number(a.tools) || a.id.localeCompare(b.id));
+  
+  g.__opencrewbotModels = { at: Date.now(), options };
   return options;
 }
 

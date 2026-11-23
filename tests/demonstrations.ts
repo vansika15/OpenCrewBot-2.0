@@ -1,7 +1,11 @@
 // End-to-End Automated Demonstration Test Suite for OpenCrewBot 2.0
-// Executes, validates, and records evidence for all 7 MeetUniversity Business Demonstrations.
+// Executes, validates, and records evidence for all 7 MeetUniversity Business Demonstrations using real local Ollama AI inference.
 
-process.env.FAST_MOCK = "true";
+process.env.AI_PROVIDER = "ollama";
+process.env.OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434";
+process.env.OLLAMA_MODEL = process.env.OLLAMA_MODEL || "qwen2.5:0.5b";
+delete process.env.FAST_MOCK;
+delete process.env.MOCK_MODE;
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

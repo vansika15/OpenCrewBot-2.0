@@ -20,16 +20,88 @@ export interface ModelAnalyticsRecord {
   inputTokens: number;
   outputTokens: number;
   totalCostUsd: number;
+  isReal: boolean;
+  executionType: "real" | "mock";
 }
 
 const analyticsStore = new Map<string, ModelAnalyticsRecord>();
 
 export class MultiModelRouter {
   /**
+   * Health check for the local Ollama provider.
+   * Probes the Ollama HTTP API and calculates actual round-trip latency.
+   */
+  async checkOllamaHealth(customUrl?: string): Promise<{
+    healthy: boolean;
+    provider: "ollama";
+    baseUrl: string;
+    models: string[];
+    activeModel: string;
+    latencyMs: number;
+    error?: string;
+  }> {
+    const baseUrl = (customUrl || process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
+    const targetModel = process.env.OLLAMA_MODEL || "qwen2.5:0.5b";
+    const start = Date.now();
+
+    try {
+      const res = await fetch(`${baseUrl}/api/tags`, {
+        signal: AbortSignal.timeout(3000),
+      });
+
+      const latencyMs = Date.now() - start;
+
+      if (!res.ok) {
+        return {
+          healthy: false,
+          provider: "ollama",
+          baseUrl,
+          models: [],
+          activeModel: targetModel,
+          latencyMs,
+          error: `Ollama returned HTTP status ${res.status}: ${res.statusText}`,
+        };
+      }
+
+      const data = (await res.json()) as { models?: Array<{ name: string; size: number }> };
+      const modelNames = (data.models ?? []).map((m) => m.name);
+      const hasTargetModel = modelNames.some((n) => n === targetModel || n.startsWith(targetModel.split(":")[0]));
+
+      return {
+        healthy: true,
+        provider: "ollama",
+        baseUrl,
+        models: modelNames,
+        activeModel: targetModel,
+        latencyMs,
+        error: hasTargetModel ? undefined : `Model '${targetModel}' not downloaded. Available: ${modelNames.join(", ")}`,
+      };
+    } catch (err) {
+      return {
+        healthy: false,
+        provider: "ollama",
+        baseUrl,
+        models: [],
+        activeModel: targetModel,
+        latencyMs: Date.now() - start,
+        error: err instanceof Error ? err.message : "Unable to reach Ollama service on " + baseUrl,
+      };
+    }
+  }
+
+  /**
    * Returns list of configured LLM providers and their operational availability.
    */
   getAvailableProviders(): ModelProviderConfig[] {
     return [
+      {
+        id: "ollama",
+        name: "Ollama (Local Offline LLM)",
+        baseUrl: process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
+        apiKeyEnv: "NONE",
+        isAvailable: true,
+        type: "local",
+      },
       {
         id: "nebius",
         name: "Nebius Token Factory",
@@ -61,16 +133,8 @@ export class MultiModelRouter {
         type: "hosted",
       },
       {
-        id: "ollama",
-        name: "Ollama (Local Endpoint)",
-        baseUrl: process.env.OLLAMA_BASE_URL || "http://localhost:11434",
-        apiKeyEnv: "NONE",
-        isAvailable: Boolean(process.env.OLLAMA_ENABLED === "true"),
-        type: "local",
-      },
-      {
         id: "mock",
-        name: "Local Deterministic Mock",
+        name: "Local Scripted Mock (Testing Only)",
         apiKeyEnv: "NONE",
         isAvailable: true,
         type: "mock",
@@ -85,6 +149,17 @@ export class MultiModelRouter {
     taskType: "planning" | "coding" | "financial" | "creative" | "classification" | "general",
     requestedModel?: string,
   ): { selectedModel: string; fallbackModel: string; provider: string } {
+    const isLocal = process.env.AI_PROVIDER === "ollama" || !process.env.NEBIUS_API_KEY;
+
+    if (isLocal) {
+      const ollamaModel = process.env.OLLAMA_MODEL || "qwen2.5:0.5b";
+      return {
+        selectedModel: ollamaModel,
+        fallbackModel: ollamaModel,
+        provider: "ollama",
+      };
+    }
+
     if (requestedModel && requestedModel !== "auto") {
       return {
         selectedModel: requestedModel,
@@ -129,16 +204,27 @@ export class MultiModelRouter {
   }
 
   /**
-   * Records token usage and calculates USD cost.
+   * Records token usage and calculates USD cost, clearly distinguishing
+   * real inference from mock testing executions.
    */
-  trackUsage(modelId: string, inputTokens: number, outputTokens: number, costUsd: number | null) {
-    const existing = analyticsStore.get(modelId) || {
+  trackUsage(
+    modelId: string,
+    inputTokens: number,
+    outputTokens: number,
+    costUsd: number | null,
+    provider = "ollama",
+    isReal = true,
+  ) {
+    const key = `${provider}:${modelId}`;
+    const existing = analyticsStore.get(key) || {
       modelId,
-      provider: modelId.split("/")[0] || "unknown",
+      provider,
       totalCalls: 0,
       inputTokens: 0,
       outputTokens: 0,
       totalCostUsd: 0,
+      isReal,
+      executionType: isReal ? "real" : "mock",
     };
 
     existing.totalCalls += 1;
@@ -148,11 +234,18 @@ export class MultiModelRouter {
       existing.totalCostUsd += costUsd;
     }
 
-    analyticsStore.set(modelId, existing);
+    analyticsStore.set(key, existing);
   }
 
   getAnalytics(): {
-    totals: { calls: number; inputTokens: number; outputTokens: number; costUsd: number };
+    totals: {
+      calls: number;
+      realCalls: number;
+      mockCalls: number;
+      inputTokens: number;
+      outputTokens: number;
+      costUsd: number;
+    };
     byModel: ModelAnalyticsRecord[];
     providers: ModelProviderConfig[];
   } {
@@ -160,12 +253,17 @@ export class MultiModelRouter {
     const totals = byModel.reduce(
       (acc, curr) => {
         acc.calls += curr.totalCalls;
+        if (curr.isReal) {
+          acc.realCalls += curr.totalCalls;
+        } else {
+          acc.mockCalls += curr.totalCalls;
+        }
         acc.inputTokens += curr.inputTokens;
         acc.outputTokens += curr.outputTokens;
         acc.costUsd += curr.totalCostUsd;
         return acc;
       },
-      { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+      { calls: 0, realCalls: 0, mockCalls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
     );
 
     return {

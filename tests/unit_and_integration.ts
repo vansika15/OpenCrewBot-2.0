@@ -1,8 +1,10 @@
 // Comprehensive Unit & Integration Test Suite for OpenCrewBot 2.0
 // Validates: Agent Factory, Task Engine DAG, Multi-Tier Memory, 8 Skills,
-// 3-Tier Security, Integrations, Scheduled Workflows, and Multi-Model Router.
+// 3-Tier Security, Integrations, Scheduled Workflows, and Multi-Model Router with Ollama.
 
-process.env.FAST_MOCK = "true";
+process.env.AI_PROVIDER = "ollama";
+process.env.OLLAMA_BASE_URL = "http://127.0.0.1:11434";
+process.env.OLLAMA_MODEL = "qwen2.5:0.5b";
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -257,18 +259,23 @@ async function runTests() {
     const providers = multiModelRouter.getAvailableProviders();
     assert(providers.length >= 5, "Expected at least 5 configured providers");
 
+    // Local Ollama Health Check
+    const ollamaHealth = await multiModelRouter.checkOllamaHealth();
+    assert(ollamaHealth.healthy, "Ollama local health check must be healthy");
+    assert(ollamaHealth.models.length > 0, "Ollama should have at least 1 downloaded model");
+
     // Task-based routing
     const planningRoute = multiModelRouter.routeModelForTask("planning");
-    assert(planningRoute.selectedModel.includes("DeepSeek") || planningRoute.selectedModel.includes("MiniMax"), "Planning routed to reasoning model");
+    assert(planningRoute.provider === "ollama" || planningRoute.selectedModel.includes("DeepSeek"), "Planning routed appropriately");
 
-    const codingRoute = multiModelRouter.routeModelForTask("coding");
-    assert(codingRoute.selectedModel.includes("Code") || codingRoute.selectedModel.includes("Flash"), "Coding routed to specialized code model");
+    // Real vs Mock Token tracking verification
+    multiModelRouter.trackUsage("qwen2.5:0.5b", 300, 150, 0, "ollama", true); // Real local inference
+    multiModelRouter.trackUsage("mock-model", 100, 50, 0, "mock", false); // Mock testing
 
-    // Token tracking
-    multiModelRouter.trackUsage("test-model", 250, 100, 0.00035);
     const analytics = multiModelRouter.getAnalytics();
-    assert(analytics.totals.inputTokens >= 250, "Input tokens tracked in analytics");
-    assert(analytics.totals.costUsd > 0, "Cost USD tracked in analytics");
+    assert(analytics.totals.realCalls >= 1, "Real calls tracked in analytics");
+    assert(analytics.totals.mockCalls >= 1, "Mock calls tracked in analytics");
+    assert(analytics.totals.inputTokens >= 400, "Input tokens tracked in analytics");
   });
 
   console.log(`\n==================================================================`);

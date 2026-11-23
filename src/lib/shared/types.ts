@@ -28,6 +28,7 @@ export interface Bot {
   emoji: string;
   color: string;
   model: string;
+  provider?: string; // "ollama" | "nebius" | "openai" | "mock"
   tools: BotTools;
   /** Connection ids this bot may use: `composio:<toolkit>` or `mcp:<serverId>`. */
   connections: string[];
@@ -128,7 +129,10 @@ export interface ModelOption {
 
 export interface AppStatus {
   mock: boolean;
-  keys: { nebius: boolean; tavily: boolean; jev: boolean; browserbase: boolean; composio: boolean };
+  provider: string; // "ollama" | "nebius" | "openai" | "mock"
+  ollamaBaseUrl?: string;
+  ollamaModel?: string;
+  keys: { nebius: boolean; tavily: boolean; jev: boolean; browserbase: boolean; composio: boolean; ollama: boolean };
   dataDir: string;
 }
 

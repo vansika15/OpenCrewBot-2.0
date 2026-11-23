@@ -9,11 +9,12 @@ import { LibSQLStore } from "@mastra/libsql";
 import { Memory } from "@mastra/memory";
 import { randomUUID } from "node:crypto";
 import type { Bot, ChatMessage, ConversationId, Part, RouteNote } from "@/lib/shared/types";
-import { MASTRA_DB_URL, OWNER_ID, isMock } from "./config";
+import { MASTRA_DB_URL, OWNER_ID, isMock, keys } from "./config";
 import { conversationGeneration, getBot, saveMessage } from "./db";
 import { publish } from "./bus";
 import { costUsd, findModel } from "./models";
 import { createMockModel } from "./mock-model";
+import { multiModelRouter } from "./llm/provider-router";
 import { announceLiveView, createSession, releaseSession } from "./browserbase";
 import { buildConnectorTools, connectionsVersion } from "./connectors";
 import { systemPrompt } from "./prompt";
@@ -64,16 +65,56 @@ const key = (conversationId: ConversationId, botId: string) => `${conversationId
 /** Settings that need a new controller when they change. Persona text doesn't:
  * the system prompt is rebuilt from the latest bot on every model call. */
 async function signatureOf(bot: Bot): Promise<string> {
-  // The model isn't here: it's read from the latest bot on every call, so a
-  // model switch applies to the next reply without dropping any sessions.
-  // Connections are, along with a version that bumps when any app or server changes.
+  // Connections and models are tracked; along with provider to ensure hot reload on switch.
   return JSON.stringify({
     tools: bot.tools,
     approval: bot.approval,
     connections: bot.connections,
     connectionsVersion: bot.connections.length ? await connectionsVersion() : 0,
     mock: isMock(),
+    provider: bot.provider || process.env.AI_PROVIDER,
+    model: bot.model,
   });
+}
+
+function resolveBotModel(holder: { bot: Bot }) {
+  return () => {
+    const bot = holder.bot;
+    // 1. Explicit mock mode check
+    if (isMock() || bot.provider === "mock" || process.env.MOCK_MODE === "true") {
+      return createMockModel(`[MOCK] ${bot.name}`);
+    }
+
+    // 2. Provider selection
+    const provider = bot.provider || process.env.AI_PROVIDER || (keys.nebius() ? "nebius" : "ollama");
+
+    if (provider === "nebius") {
+      if (!keys.nebius()) {
+        throw new Error(
+          "Nebius Token Factory key (NEBIUS_API_KEY) is missing. Either set NEBIUS_API_KEY in .env, switch AI_PROVIDER to 'ollama' for local inference, or set MOCK_MODE=true for testing.",
+        );
+      }
+      return `nebius/${bot.model}`;
+    }
+
+    if (provider === "openai") {
+      if (!process.env.OPENAI_API_KEY) {
+        throw new Error("OpenAI API key (OPENAI_API_KEY) is missing in .env.");
+      }
+      return `openai/${bot.model || "gpt-4o-mini"}`;
+    }
+
+    // 3. Local Ollama Provider (Default for local inference)
+    const baseUrl = (process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434").replace(/\/$/, "");
+    const modelId = bot.model && !bot.model.includes("/") ? bot.model : (process.env.OLLAMA_MODEL || "qwen2.5:0.5b");
+
+    return {
+      providerId: "ollama",
+      modelId,
+      url: `${baseUrl}/v1`,
+      apiKey: "ollama",
+    };
+  };
 }
 
 /** A Browserbase cloud browser, reached over CDP. The session starts on the
@@ -102,7 +143,7 @@ async function buildRuntime(bot: Bot): Promise<BotRuntime> {
     id: `bot-${bot.id}`,
     name: bot.name,
     instructions: () => systemPrompt(holder.bot, capabilities, builtIn.instructions),
-    model: isMock() ? createMockModel(bot.name) : () => `nebius/${holder.bot.model}`,
+    model: resolveBotModel(holder),
     tools: { ...connectors.tools, ...builtIn.tools },
     memory,
   });
@@ -209,6 +250,13 @@ class TurnFolder {
   finished = false;
 
   constructor(conversationId: ConversationId, bot: Bot, route?: RouteNote) {
+    const isMockRun = isMock() || bot.provider === "mock" || process.env.MOCK_MODE === "true";
+    const provider = bot.provider || process.env.AI_PROVIDER || (keys.nebius() ? "nebius" : "ollama");
+    const effectiveModel = isMockRun
+      ? "mock"
+      : provider === "ollama"
+        ? (bot.model && !bot.model.includes("/") ? bot.model : (process.env.OLLAMA_MODEL || "qwen2.5:0.5b"))
+        : bot.model;
     this.message = {
       id: randomUUID(),
       conversationId,
@@ -217,7 +265,7 @@ class TurnFolder {
       createdAt: new Date().toISOString(),
       status: "streaming",
       parts: [],
-      model: isMock() ? "mock" : bot.model,
+      model: effectiveModel,
       route,
     };
   }
@@ -343,11 +391,23 @@ class TurnFolder {
         p.status = status === "stopped" ? "denied" : "error";
       }
     }
-    if (this.message.model !== "mock") {
-      const model = await findModel(this.message.model ?? "");
-      this.message.usage = { input: this.input, output: this.output, costUsd: costUsd(model, this.input, this.output) };
+    const modelId = this.message.model || "mock";
+    if (modelId !== "mock") {
+      const isOllama = modelId.startsWith("qwen") || modelId.startsWith("llama") || modelId.startsWith("phi") || !modelId.includes("/");
+      const model = await findModel(modelId);
+      const calculatedCost = isOllama ? 0.0 : costUsd(model, this.input, this.output);
+      this.message.usage = { input: this.input, output: this.output, costUsd: calculatedCost };
+      multiModelRouter.trackUsage(
+        modelId,
+        this.input,
+        this.output,
+        calculatedCost ?? 0,
+        isOllama ? "ollama" : "nebius",
+        true, // isReal inference
+      );
     } else {
       this.message.usage = { input: this.input, output: this.output, costUsd: null };
+      multiModelRouter.trackUsage("mock-model", this.input, this.output, 0, "mock", false);
     }
     await saveMessage(this.message);
     publish({ type: "message", message: this.message });
