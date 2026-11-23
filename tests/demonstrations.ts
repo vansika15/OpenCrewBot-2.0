@@ -285,6 +285,7 @@ async function runAllDemonstrations() {
   log("\n==================================================================");
   log("  ALL 7 MEETUNIVERSITY BUSINESS DEMONSTRATIONS COMPLETED SUCCESSFULLY");
   log("==================================================================");
+  process.exit(0);
 }
 
 runAllDemonstrations().catch((err) => {

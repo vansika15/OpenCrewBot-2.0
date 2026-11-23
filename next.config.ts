@@ -5,6 +5,9 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   // Keep the dev badge clear of the sidebar's bottom bar.
   devIndicators: { position: "bottom-right" },
+  experimental: {
+    agentUpgrade: false,
+  },
   // Mastra and its runtimes (LibSQL, QuickJS, agent-browser) use Node-only
   // features, so they load with plain Node `require` instead of being bundled.
   serverExternalPackages: [

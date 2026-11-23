@@ -274,6 +274,7 @@ async function runTests() {
   console.log(`\n==================================================================`);
   console.log(`  ALL ${passed}/${total} UNIT & INTEGRATION TESTS PASSED (100% SUCCESS)`);
   console.log(`==================================================================\n`);
+  process.exit(0);
 }
 
 runTests().catch((err) => {
