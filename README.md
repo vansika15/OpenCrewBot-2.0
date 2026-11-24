@@ -107,9 +107,26 @@ All seven business demonstrations were executed using real business logic and ve
 ## Quickstart
 
 ### Prerequisites
-- **Node.js**: `v22.13` or newer (Tested on Node.js `24.11.0`)
+- **Node.js**: `v22.13` or newer (Tested on Node.js `v24.16.0`)
 - **Package Manager**: `pnpm` (run via `npx pnpm` or standalone `pnpm`)
 - **OS**: Windows, macOS, or Linux
+- **Local AI Engine (Recommended)**: [Ollama](https://ollama.com) (`v0.40.16` or newer)
+
+### Local Offline AI Setup (Ollama)
+
+OpenCrewBot 2.0 supports genuine local, offline AI inference with zero external API calls or cloud dependencies:
+
+1. **Install Ollama**: Download and install from [ollama.com](https://ollama.com).
+2. **Download Model**:
+   ```sh
+   ollama pull qwen2.5:0.5b
+   ```
+   *(For systems with 16GB+ RAM or dedicated GPUs, `qwen2.5:1.5b` or `qwen2.5:7b` can also be configured).*
+3. **Verify Ollama is Running**:
+   ```sh
+   ollama serve
+   ```
+   Ollama listens by default at `http://127.0.0.1:11434`.
 
 ### Installation & Startup
 
@@ -121,15 +138,26 @@ cd C:\Users\hp\Documents\EDXSO_Assignment_3\OpenCrewBot
 pnpm install
 
 # 3. Environment configuration
-# The application runs fully out-of-the-box in zero-cost, zero-latency Mock Mode.
-# To connect live cloud services, configure .env:
 cp .env.example .env
+```
 
-# 4. Start the development server
+In `.env`, configure your preferred AI provider:
+```env
+# Genuine Local Offline Inference (Default & Recommended)
+AI_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:0.5b
+
+# Optional: Set MOCK_MODE=true ONLY for isolated testing without AI inference
+MOCK_MODE=false
+```
+
+```sh
+# 4. Start the application
 pnpm dev
 ```
 
-Open **[http://localhost:3000](http://localhost:3000)** in your browser.
+Open **[http://localhost:3000](http://localhost:3000)** in your browser. Configure models and check live provider health anytime in the Settings Panel.
 
 ---
 
@@ -149,9 +177,14 @@ npx tsx tests/demonstrations.ts
 ```
 *Executes all 7 business scenarios against MeetUniversity data, generating fresh markdown evidence in `test_evidence/`.*
 
-### 3. Production TypeScript & Next.js Build
+### 3. Run Offline / Stopped-Provider Failure Mode Test
 ```sh
-npx pnpm exec tsc --noEmit
+npx tsx tests/test_failure_mode.ts
+```
+*Validates that when the Ollama service is unavailable, the application reports a genuine provider error within 20s and strictly does NOT generate fake scripted output or silently fallback.*
+
+### 4. Production TypeScript & Next.js Build
+```sh
 npx pnpm exec next build
 ```
 
@@ -159,7 +192,7 @@ npx pnpm exec next build
 
 ## Complete Documentation Index
 
-All 16 technical reports, architectural audits, and operational manuals required by the assignment specification are available in the repository root:
+All architectural audits, verification reports, and operational manuals for OpenCrewBot 2.0:
 
 | # | Documentation Report | Description |
 | :---: | :--- | :--- |
@@ -178,7 +211,10 @@ All 16 technical reports, architectural audits, and operational manuals required
 | 13 | [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md) | Turn-by-turn video presentation script with exact inputs, expected outputs, and UI walkthrough. |
 | 14 | [`LIVE_VS_MOCKED_FEATURES.md`](LIVE_VS_MOCKED_FEATURES.md) | Clear demarcation of live hardware/IO features vs simulated cloud API endpoints. |
 | 15 | [`TECHNICAL_DOCUMENTATION.md`](TECHNICAL_DOCUMENTATION.md) | Comprehensive engineering documentation covering all internal APIs, database schemas, and components. |
-| 16 | [`README.md`](README.md) | Master workforce overview, quickstart instructions, and project landing page (this document). |
+| 16 | [`REAL_VS_MOCK_AI_AUDIT.md`](REAL_VS_MOCK_AI_AUDIT.md) | Rigorous audit proving genuine local neural inference via Ollama vs mock isolation. |
+| 17 | [`CURRENT_IMPLEMENTATION_STATUS.md`](CURRENT_IMPLEMENTATION_STATUS.md) | Implementation inventory across all 10 modules, build fixes, and test results. |
+| 18 | [`FINAL_VERIFICATION_REPORT.md`](FINAL_VERIFICATION_REPORT.md) | Master final independent audit covering all requirements, security fixes, and 7 demonstrations. |
+| 19 | [`README.md`](README.md) | Master workforce overview, quickstart instructions, and project landing page (this document). |
 
 ---
 

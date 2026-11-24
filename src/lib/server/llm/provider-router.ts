@@ -46,7 +46,7 @@ export class MultiModelRouter {
 
     try {
       const res = await fetch(`${baseUrl}/api/tags`, {
-        signal: AbortSignal.timeout(3000),
+        signal: AbortSignal.timeout(10000), // Strict 10-second timeout for Ollama health check
       });
 
       const latencyMs = Date.now() - start;

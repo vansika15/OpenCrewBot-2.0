@@ -22,6 +22,9 @@ class WorkflowEngine {
     this.timer = setInterval(() => {
       void this.checkAndRunDueWorkflows();
     }, 30_000);
+    if (this.timer.unref) {
+      this.timer.unref();
+    }
   }
 
   /**
