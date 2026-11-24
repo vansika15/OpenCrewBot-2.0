@@ -78,4 +78,19 @@
   - *Why*: User instruction in chat
   - *Source*: User Conversation
 
+- **[Preference]**: Prefers concise summary tables
+  - *When*: 2026-11-24T10:51:37.428Z
+  - *Why*: User preference update
+  - *Source*: Chat turn
+
+- **[Preference]**: Prefers concise summary tables
+  - *When*: 2026-11-24T11:30:09.339Z
+  - *Why*: User preference update
+  - *Source*: Chat turn
+
+- **[Preference]**: The user prefers comprehensive narrative prose with extensive academic footnotes.
+  - *When*: 2026-11-24T11:49:01.339Z
+  - *Why*: User instruction in chat
+  - *Source*: User Conversation
+
 ```

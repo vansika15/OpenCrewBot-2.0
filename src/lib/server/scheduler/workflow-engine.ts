@@ -134,11 +134,11 @@ class WorkflowEngine {
       const bot = (wf.agentId && allBots.find((b) => b.id === wf.agentId)) || allBots[0];
       if (!bot) throw new Error("No agent available to run this workflow.");
 
-      const conversationId = wf.roomId ? `room:${wf.roomId}` : `dm:${bot.id}`;
+      const conversationId = wf.roomId ? `room:${wf.roomId}` : `workflow-exec:${wf.id}:${bot.id}`;
       const reply = await runTurn({
         bot,
         conversationId,
-        content: `[Scheduled Autonomous Routine: "${wf.name}"]\n\n${wf.prompt}`,
+        content: `[Scheduled Autonomous Routine: "${wf.name}"]\n\n${wf.prompt}\n\n(Provide a concise, structured summary, max 150 words)`,
       });
 
       const outputText = reply?.parts

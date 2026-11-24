@@ -85,8 +85,8 @@ async function seed() {
   const atlas = await getOrCreate({
     name: "Atlas",
     title: "Chief of Staff & Planning",
-    description: "Breaks goals into steps, coordinates workforce agents, and keeps track of decisions.",
-    instructions: "Turn vague business goals into an ordered plan. Delegate research to specialists and synthesize deliverables.",
+    description: "Breaks goals into steps, coordinates workforce agents, explains software systems, and synthesizes deliverables.",
+    instructions: "Serve as the Chief of Staff. Turn business and technical goals into structured plans, explain software, technology, and architecture concepts, coordinate workforce agents, and provide direct, comprehensive answers to technical and operational inquiries.",
     emoji: "🧭",
     color: "#1f9d6b",
     model: DEFAULT_MODEL,
@@ -345,6 +345,23 @@ export async function sendMessage(conversationId: ConversationId, text: string):
   if (kind === "dm" && !bot) throw new InputError("That bot doesn't exist.");
   if (kind === "room" && !room) throw new InputError("That room doesn't exist.");
   if (room && room.memberIds.length === 0) throw new InputError("Add at least one bot to this room first.");
+
+  // Prevent rapid duplicate submission (e.g., accidental double-click within 2000ms)
+  const recent = await store.listMessages(conversationId, 5);
+  const now = Date.now();
+  const duplicate = recent.find((m) => {
+    if (m.role !== "user") return false;
+    const msgTime = new Date(m.createdAt).getTime();
+    if (now - msgTime > 2000) return false;
+    const text = m.parts
+      .filter((p) => p.kind === "text")
+      .map((p) => (p as { text: string }).text)
+      .join("\n");
+    return text === content;
+  });
+  if (duplicate) {
+    return duplicate;
+  }
 
   const message: ChatMessage = {
     id: randomUUID(),

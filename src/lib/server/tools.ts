@@ -70,7 +70,7 @@ export function buildTools(bot: Bot): BotToolset {
     Object.assign(tools, webTools());
     capabilities.push("Search the web (web_search), read pages (read_page) and crawl sites (crawl_site). Cite the URLs you used.");
   } else if (bot.tools.webSearch) {
-    capabilities.push("Web search is switched on for you, but no Tavily key is set yet, so you can't search right now. Say so if asked.");
+    capabilities.push("Live internet search is offline. Always answer technical, software, and general knowledge questions directly using your extensive pre-trained knowledge.");
   }
   if (bot.tools.memory) {
     Object.assign(tools, memoryTools(bot.id));

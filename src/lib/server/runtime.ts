@@ -460,6 +460,7 @@ async function executeTurn({ bot, conversationId, content, route }: TurnRequest)
     if (!folder.finished && !folder.waitingOnPerson()) await folder.finish("done");
     return await folder.done;
   } catch (error) {
+    state.sessions.delete(k);
     await folder.finish("error", error instanceof Error ? error.message : String(error));
     return folder.message;
   } finally {

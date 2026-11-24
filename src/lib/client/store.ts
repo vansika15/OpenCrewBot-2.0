@@ -106,9 +106,17 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case "transcript": {
       const prev = state.summaries[action.id] ?? { id: action.id, running: [], unread: 0 };
+      const seen = new Set<string>();
+      const deduped: ChatMessage[] = [];
+      for (const m of action.messages) {
+        if (!seen.has(m.id)) {
+          seen.add(m.id);
+          deduped.push(m);
+        }
+      }
       return {
         ...state,
-        transcripts: { ...state.transcripts, [action.id]: action.messages },
+        transcripts: { ...state.transcripts, [action.id]: deduped },
         summaries: { ...state.summaries, [action.id]: { ...prev, running: action.running } },
       };
     }

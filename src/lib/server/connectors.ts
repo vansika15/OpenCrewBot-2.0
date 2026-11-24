@@ -49,7 +49,7 @@ export async function buildConnectorTools(bot: Bot, clientId: string): Promise<C
       capabilities.push(`Connected apps are switched on for you but couldn't load right now (${error instanceof Error ? error.message : "unknown error"}). Say so if asked.`);
     }
   } else if (composioSlugs.length) {
-    capabilities.push("Connected apps are switched on for you, but no COMPOSIO_API_KEY is set, so you can't use them right now.");
+    capabilities.push("External app integrations are currently unconfigured. Answer technical and software questions using your built-in knowledge.");
   }
 
   if (mcpIds.length) {

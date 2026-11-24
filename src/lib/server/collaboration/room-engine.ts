@@ -100,7 +100,7 @@ export class CollaborationRoomEngine {
         `Overall Objective: ${directive}`,
         `Current Shared Room Context:\n${sharedMemory}`,
         `Your Role: ${specialist.name} (${specialist.title}).`,
-        "Provide your specialised perspective, data points, and recommendations. To share an artifact, format it clearly.",
+        "Provide your specialised perspective, data points, and recommendations. To share an artifact, format it clearly. (Keep response concise, max 100 words).",
       ].join("\n\n");
 
       const reply = await runTurn({
@@ -146,7 +146,7 @@ export class CollaborationRoomEngine {
         `[Peer Review & Verification Turn]`,
         `As ${critic.name} (${critic.title}), critically review the intermediate findings produced by your teammates:`,
         artifactSummary,
-        "Challenge assumptions, check for risks or missing constraints, and suggest necessary refinements before final consensus.",
+        "Challenge assumptions, check for risks or missing constraints, and suggest necessary refinements before final consensus. (Keep response concise, max 100 words).",
       ].join("\n\n");
 
       await runTurn({

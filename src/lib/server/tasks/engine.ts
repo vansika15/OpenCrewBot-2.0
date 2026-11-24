@@ -47,7 +47,7 @@ export class TaskExecutionEngine {
         createdAt: now,
         retryCount: 0,
         maxRetries: t.maxRetries ?? 2,
-        timeoutMs: t.timeoutMs ?? 120_000,
+        timeoutMs: t.timeoutMs ?? 180_000,
       };
     });
 
@@ -203,7 +203,7 @@ export class TaskExecutionEngine {
       `Description: ${task.description}`,
       typeof task.input === "string" ? `Input:\n${task.input}` : `Input:\n${JSON.stringify(task.input, null, 2)}`,
       depOutputs ? `Dependencies & Prior Results:\n${depOutputs}` : "",
-      "Execute this task thoroughly. Provide clear, evidence-based, actionable outputs.",
+      "Execute this task concisely and directly. Provide a clear, evidence-based, structured summary (maximum 150 words).",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -218,7 +218,7 @@ export class TaskExecutionEngine {
         );
 
         const executionPromise = (async () => {
-          const conversationId = `dm:${bot.id}`;
+          const conversationId = task.planId ? `task-exec:${task.planId}:${bot.id}` : `task-exec:${task.id}:${bot.id}`;
           const reply = await runTurn({
             bot,
             conversationId,

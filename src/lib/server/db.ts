@@ -128,9 +128,13 @@ export async function setSetting(key: string, value: unknown): Promise<void> {
 
 /** Fill in fields added after a bot was saved, so older rows keep working. */
 function normalizeBot(raw: Bot): Bot {
+  const defaultModel = process.env.OLLAMA_MODEL || "qwen2.5:0.5b";
+  const defaultProvider = process.env.AI_PROVIDER || "ollama";
   return {
     ...raw,
     connections: raw.connections ?? [],
+    provider: raw.provider || defaultProvider,
+    model: !raw.model || raw.model.includes("/") ? defaultModel : raw.model,
   };
 }
 
@@ -192,6 +196,50 @@ export async function saveMessage(message: ChatMessage): Promise<void> {
   });
 }
 
+function deduplicateMessages(messages: ChatMessage[]): ChatMessage[] {
+  const result: ChatMessage[] = [];
+  const seenIds = new Set<string>();
+
+  for (let i = 0; i < messages.length; i++) {
+    const current = messages[i];
+    if (seenIds.has(current.id)) continue;
+
+    const prev = result.length > 0 ? result[result.length - 1] : null;
+    if (prev && prev.role === current.role && prev.botId === current.botId) {
+      const prevText = prev.parts
+        .filter((p) => p.kind === "text")
+        .map((p) => (p as { text: string }).text)
+        .join("\n")
+        .trim();
+      const currText = current.parts
+        .filter((p) => p.kind === "text")
+        .map((p) => (p as { text: string }).text)
+        .join("\n")
+        .trim();
+
+      if (prevText && prevText === currText) {
+        const prevTime = new Date(prev.createdAt).getTime();
+        const currTime = new Date(current.createdAt).getTime();
+        const timeDiffMs = Math.abs(currTime - prevTime);
+
+        const isAutomatedSpam =
+          currText.includes("Autonomous workforce execution finalized") ||
+          currText.includes("Analysis & Findings for Workforce Workstream") ||
+          currText.includes("running on the *mock model* because no `NEBIUS_API_KEY` is set yet");
+
+        if (timeDiffMs < 60_000 || isAutomatedSpam) {
+          continue;
+        }
+      }
+    }
+
+    seenIds.add(current.id);
+    result.push(current);
+  }
+
+  return result;
+}
+
 export async function listMessages(conversationId: ConversationId, limit = 200): Promise<ChatMessage[]> {
   const rows = await (await db()).execute({
     sql: `SELECT data FROM (
@@ -199,7 +247,8 @@ export async function listMessages(conversationId: ConversationId, limit = 200):
           ) ORDER BY created_at ASC`,
     args: [conversationId, limit],
   });
-  return rows.rows.map((r) => JSON.parse(String(r.data)) as ChatMessage);
+  const parsed = rows.rows.map((r) => JSON.parse(String(r.data)) as ChatMessage);
+  return deduplicateMessages(parsed);
 }
 
 export async function clearMessages(conversationId: ConversationId): Promise<void> {
